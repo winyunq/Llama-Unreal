@@ -32,6 +32,53 @@ public class LlamaCore : ModuleRules
 		get { return Path.GetFullPath(Path.Combine(ModuleDirectory, "../../ThirdParty/HnswLib/Include")); }
 	}
 
+	// DLL filename prefixes this plugin owns — used to identify stale copies for cleanup.
+	// "ggml" covers all ggml-base/cpu/vulkan variants; cuda/cublas entries omitted (Vulkan backend).
+	private static readonly string[] ManagedDllPrefixes = new[]
+	{
+		"ggml", "llama.", "mtmd."
+	};
+
+	private static bool IsManagedDll(string FileName)
+	{
+		string Lower = FileName.ToLowerInvariant();
+		if (!Lower.EndsWith(".dll")) return false;
+		foreach (string Prefix in ManagedDllPrefixes)
+		{
+			if (Lower.StartsWith(Prefix)) return true;
+		}
+		return false;
+	}
+
+	private void CleanStaleDLLs(string SourceDllDir, string TargetDllDir)
+	{
+		if (!Directory.Exists(TargetDllDir)) return;
+		if (!Directory.Exists(SourceDllDir)) return;
+
+		var ExpectedDlls = new System.Collections.Generic.HashSet<string>(StringComparer.OrdinalIgnoreCase);
+		foreach (string Path_ in Directory.EnumerateFiles(SourceDllDir, "*.dll"))
+		{
+			ExpectedDlls.Add(Path.GetFileName(Path_));
+		}
+
+		foreach (string DllPath in Directory.EnumerateFiles(TargetDllDir, "*.dll"))
+		{
+			string DllName = Path.GetFileName(DllPath);
+			if (!IsManagedDll(DllName)) continue;
+			if (ExpectedDlls.Contains(DllName)) continue;
+
+			try
+			{
+				File.Delete(DllPath);
+				System.Console.WriteLine("Llama-Unreal: removed stale DLL " + DllPath);
+			}
+			catch (Exception Ex)
+			{
+				System.Console.WriteLine("Llama-Unreal: could not remove stale DLL " + DllPath + " (" + Ex.Message + ")");
+			}
+		}
+	}
+
 	private void LinkDyLib(string DyLib)
 	{
 		string MacPlatform = "Mac";
@@ -157,10 +204,25 @@ public class LlamaCore : ModuleRules
 			string LlamaDllPath = LlamaLibPath;
 			bool bUsingLlamaEnvPath = !string.IsNullOrEmpty(LlamaLibPath);
 
-			if (!bUsingLlamaEnvPath) 
+			if (!bUsingLlamaEnvPath)
 			{
 				LlamaLibPath = Win64LibPath;
 				LlamaDllPath = Path.Combine(LlamaCppBinariesPath, "Win64");
+			}
+
+			//Remove stale DLLs from prior builds so old backend variants aren't loaded at runtime.
+			//Skipped when LLAMA_PATH is set — consumer is managing their own DLL set.
+			if (!bUsingLlamaEnvPath)
+			{
+				string PluginWin64Binaries = Path.Combine(PluginBinariesPath, "Win64");
+				CleanStaleDLLs(LlamaDllPath, PluginWin64Binaries);
+
+				if (Target.ProjectFile != null)
+				{
+					string ProjectWin64Binaries = Path.Combine(
+						Target.ProjectFile.Directory.FullName, "Binaries", "Win64");
+					CleanStaleDLLs(LlamaDllPath, ProjectWin64Binaries);
+				}
 			}
 
 			PublicAdditionalLibraries.Add(Path.Combine(LlamaLibPath, "llama.lib"));
@@ -171,30 +233,25 @@ public class LlamaCore : ModuleRules
 			PublicAdditionalLibraries.Add(Path.Combine(LlamaLibPath, "common.lib"));
 			PublicAdditionalLibraries.Add(Path.Combine(LlamaLibPath, "mtmd.lib"));
 
-			RuntimeDependencies.Add("$(BinaryOutputDir)/ggml.dll", Path.Combine(LlamaDllPath, "ggml.dll"));
-			RuntimeDependencies.Add("$(BinaryOutputDir)/ggml-base.dll", Path.Combine(LlamaDllPath, "ggml-base.dll"));
-			RuntimeDependencies.Add("$(BinaryOutputDir)/ggml-cpu.dll", Path.Combine(LlamaDllPath, "ggml-cpu.dll"));
-			RuntimeDependencies.Add("$(BinaryOutputDir)/llama.dll", Path.Combine(LlamaDllPath, "llama.dll"));
-			RuntimeDependencies.Add("$(BinaryOutputDir)/mtmd.dll", Path.Combine(LlamaDllPath, "mtmd.dll"));
-
-			//System.Console.WriteLine("Llama-Unreal building using llama.lib at path " + LlamaLibPath);
+			// Stage every DLL found in the source dir. $(BinaryOutputDir) resolves correctly
+			// for both editor (Project/Binaries/Win64) and packaged builds — UBT handles the rest.
+			// Dynamic enumeration means new backend DLLs are picked up without manual additions.
+			if (Directory.Exists(LlamaDllPath))
+			{
+				foreach (string SrcDll in Directory.EnumerateFiles(LlamaDllPath, "*.dll"))
+				{
+					string DllName = Path.GetFileName(SrcDll);
+					RuntimeDependencies.Add("$(BinaryOutputDir)/" + DllName, SrcDll);
+				}
+			}
 
 			if(bVulkanGGMLFound)
 			{
 				PublicAdditionalLibraries.Add(Path.Combine(Win64LibPath, "ggml-vulkan.lib"));
-				RuntimeDependencies.Add("$(BinaryOutputDir)/ggml-vulkan.dll", Path.Combine(LlamaDllPath, "ggml-vulkan.dll"));
-				//PublicDelayLoadDLLs.Add("ggml-vulkan.dll");
-				//System.Console.WriteLine("Llama-Unreal building using ggml-vulkan.lib at path " + Win64LibPath);
 			}
 			if(bCudaGGMLFound)
 			{
 				PublicAdditionalLibraries.Add(Path.Combine(Win64LibPath, "ggml-cuda.lib"));
-				RuntimeDependencies.Add("$(BinaryOutputDir)/ggml-cuda.dll", Path.Combine(LlamaDllPath, "ggml-cuda.dll"));
-				RuntimeDependencies.Add("$(BinaryOutputDir)/cublas64_12.dll", Path.Combine(LlamaDllPath, "cublas64_12.dll"));
-				RuntimeDependencies.Add("$(BinaryOutputDir)/cublasLt64_12.dll", Path.Combine(LlamaDllPath, "cublasLt64_12.dll"));
-				RuntimeDependencies.Add("$(BinaryOutputDir)/cudart64_12.dll", Path.Combine(LlamaDllPath, "cudart64_12.dll"));
-				//PublicDelayLoadDLLs.Add("ggml-cuda.dll");
-				//System.Console.WriteLine("Llama-Unreal building using ggml-cuda.lib at path " + Win64LibPath);
 			}
 		}
 		else if (Target.Platform == UnrealTargetPlatform.Mac)
