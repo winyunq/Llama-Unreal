@@ -10,13 +10,14 @@
 #include <vector>
 #include "llama.h"
 
+
 struct mtmd_context;
 
 /** 
 * Uses mostly Llama.cpp native API, meant to be embedded in LlamaNative that wraps 
 * unreal threading and data types.
 */
-class FLlamaInternal
+class LLAMACORE_API FLlamaInternal
 {
 public:
     //Core State
@@ -106,7 +107,10 @@ public:
 
     //take a prompt and return an array of floats signifying the embeddings
     void GetPromptEmbeddings(const std::string& Text, std::vector<float>& Embeddings);
-
+    // 导出当前物理显存状态
+    void ExportState(TArray<uint8>& OutData, std::vector<llama_chat_message>& OutMessages, int32& OutFilledLen);
+    // 导入并恢复物理显存状态
+    void ImportState(const TArray<uint8>& InData, const std::vector<llama_chat_message>& InMessages, int32 InFilledLen);
 protected:
     //Wrapper for user<->assistant templated conversation
     int32 ProcessPrompt(const std::string& Prompt, EChatTemplateRole Role = EChatTemplateRole::Unknown);

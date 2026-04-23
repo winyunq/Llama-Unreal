@@ -118,7 +118,9 @@ public:
 
     UFUNCTION(BlueprintPure, Category = "LLM Model Subsystem")
     FStructuredChatHistory GetStructuredChatHistory();
-
+    // 在 public 下暴露 Native 访问
+    // 这样 AIProvider 就能通过 Llama->GetLlamaNative()->GetInternal() 顺藤摸瓜
+    class FLlamaNative* GetLlamaNative() const { return LlamaNative; }
 private:
     class FLlamaNative* LlamaNative;
 };

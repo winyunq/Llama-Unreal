@@ -858,7 +858,7 @@ int32 FLlamaInternal::ApplyTemplateFromMessagesToBuffer(const std::string& InTem
             bAddAssistantBoS, ToBuffer.data(), ToBuffer.size());
 
     //Resize if ToBuffer can't hold it
-    if (NewLen > ToBuffer.size())
+    if (NewLen > 0 && (size_t)NewLen > ToBuffer.size())
     {
         ToBuffer.resize(NewLen);
         NewLen = llama_chat_apply_template(InTemplate.c_str(), FromMessages.data(), FromMessages.size(),
@@ -1255,4 +1255,26 @@ FLlamaInternal::~FLlamaInternal()
     OnTokenGenerated = nullptr;
     UnloadModel();
     llama_backend_free();
+}
+void FLlamaInternal::ExportState(TArray<uint8>& OutData, std::vector<llama_chat_message>& OutMessages, int32& OutFilledLen)
+{
+    if (!Context) return;
+    size_t StateSize = llama_get_state_size(Context);
+    OutData.SetNumUninitialized(StateSize);
+    llama_copy_state_data(Context, OutData.GetData());
+    
+    OutMessages = this->Messages;
+    OutFilledLen = this->FilledContextCharLength;
+}
+
+void FLlamaInternal::ImportState(const TArray<uint8>& InData, const std::vector<llama_chat_message>& InMessages, int32 InFilledLen)
+{
+    if (!Context || InData.Num() == 0) return;
+    llama_set_state_data(Context, InData.GetData());
+    
+    this->Messages = InMessages;
+    this->FilledContextCharLength = InFilledLen;
+    this->ContextHistory.resize(InFilledLen);
+    // 同步字符串缓存
+    ApplyTemplateToContextHistory(false);
 }

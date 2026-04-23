@@ -9,7 +9,7 @@ public class LlamaCore : ModuleRules
 {
 	private string PluginBinariesPath
 	{
-		get { return Path.GetFullPath(Path.Combine(ModuleDirectory, "../../Binaries")); }
+		get { return Path.GetFullPath(Path.Combine(PluginDirectory, "Binaries")); }
 	}
 
 	private string LlamaCppLibPath
@@ -90,7 +90,6 @@ public class LlamaCore : ModuleRules
 	public LlamaCore(ReadOnlyTargetRules Target) : base(Target)
 	{
 		PCHUsage = ModuleRules.PCHUsageMode.UseExplicitOrSharedPCHs;
-
         	PublicIncludePaths.AddRange(
 			new string[] {
 				// ... add public include paths required here ...
@@ -241,7 +240,10 @@ public class LlamaCore : ModuleRules
 				foreach (string SrcDll in Directory.EnumerateFiles(LlamaDllPath, "*.dll"))
 				{
 					string DllName = Path.GetFileName(SrcDll);
-					RuntimeDependencies.Add("$(BinaryOutputDir)/" + DllName, SrcDll);
+					if (IsManagedDll(DllName))
+					{
+						RuntimeDependencies.Add("$(BinaryOutputDir)/" + DllName, SrcDll);
+					}
 				}
 			}
 

@@ -11,6 +11,7 @@
 #include "Containers/Ticker.h"
 
 
+class FLlamaInternal;
 /** 
 * C++ native wrapper in Unreal styling for Llama.cpp with threading and callbacks. Embed in final place
 * where it should be used e.g. ActorComponent, UObject, or Subsystem subclass.
@@ -99,7 +100,8 @@ public:
 	~FLlamaNative();
 
 	float ThreadIdleSleepDuration = 0.005f;        //default sleep timer for BG thread in sec.
-
+	// 在 public 下暴露 Internal 访问权限
+	FLlamaInternal* GetInternal() const { return Internal; }
 protected:
 
 	//can be safely called on game thread or the bg thread
